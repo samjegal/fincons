@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -eou pipefail
+
+IFS=$'\n\t'
+SELF_COMMAND="$0"
+
+connect() {
+  sh -c "scutil --nc start \"${1}\""
+
+  pw=$(security 2>&1 >/dev/null find-generic-password -ga ${1} \
+  | ruby -e 'print $1 if STDIN.gets =~ /^password: "(.*)"$/')
+  osascript -e "set the clipboard to \"${pw}\""
+  sleep 1
+
+  osascript -e "tell application \"System Events\" to keystroke \"v\" using command down"
+  osascript -e "tell application \"System Events\" to key code 36"
+  osascript -e "set the clipboard to \"\""
+}
+
+disconnect() {
+  sh -c "scutil --nc stop \"${1}\""
+  wait_state "${1}"
+}
+
+selector() {
+  local choice
+  choice="$(FZF_DEFAULT_COMMAND="${SELF_COMMAND}" fzf --ansi --no-preview || true)"
+  if [[ -z "${choice}" ]]; then
+    exit 1
+  else
+    state="$(get_connected)"
+    if [[ ${state} == ${choice} ]]; then
+      disconnect "${choice}"
+    elif [[ ${state} == "none" ]]; then
+      connect "${choice}"
+    else
+      disconnect "${state}"
+      ncstate="$(scutil --nc list | grep f5.access | grep \"${choice}\")"      
+      if [[ $ncstate == *"Disconnected"* ]]; then
+        connect "${choice}"
+      else
+        err "connection error"
+      fi
+    fi
+  fi
+}
+
+wait_state() {
+  while true ; do
+    ncstate="$(scutil --nc list | grep f5.access | grep \"${1}\")"
+    if [[ $ncstate == *"Disconnected"* ]]; then
+      break
+    fi
+    sleep 1
+  done
+}
+
+get_connected() {
+  nclist="$(scutil --nc list | grep f5.access)"
+  if [[ $nclist == *"Connected"* ]]; then
+    scutil --nc list | grep f5.access | grep Connected | grep -o '\".*\"' | sed 's/\"//g'
+  else
+    echo "none"
+  fi
+}
+
+get_list() {
+  scutil --nc list | grep f5.access | grep -o '\".*\"' | sed 's/\"//g'
+}
+
+list() {
+  set -u pipefail
+  local nclist
+  nclist=$(get_list) || err "error getting current f5.access list"
+  connected="$(get_connected)" || err "error getting connected f5.access sslvpn name"
+
+  local yellow darkbg normal
+  yellow=$(tput setaf 3 || true)
+  darkbg=$(tput setab 0 || true)
+  normal=$(tput sgr0 || true)
+
+  local fg bg
+  fg=${yellow}
+  bg=${darkbg}
+
+  for n in $nclist; do
+    if [[ "${n}" == "${connected}" ]]; then
+      echo "${bg}${fg}${n}${normal}"
+    else
+      echo "${n}"
+    fi
+  done
+}
+
+err() {
+  echo >&2 "${1}"
+  exit 1
+}
+
+usage() {
+cat <<EOF
+USAGE:
+  fincons                : list the fincloud console sslvpn
+  fincons -c,--current   : show the current connected sslvpn
+  fincons -h,--help      : show this message
+EOF
+}
+
+main() {
+  if [[ "$#" -eq 0 ]]; then
+    if [[ -t 1 ]]; then
+      selector
+    else
+      list
+    fi
+  elif [[ "$#" -eq 1 ]]; then
+    if [[ "${1}" == '-h' || "${1}" == '--help' ]]; then
+      usage
+    elif [[ "${1}" == '-c' || "${1}" == '--current' ]]; then
+      get_connected
+    fi
+  else
+    exit 1
+  fi
+}
+
+main "$@"
