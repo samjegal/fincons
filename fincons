@@ -22,12 +22,27 @@ connect() {
 
   pw=$(security 2>&1 >/dev/null find-generic-password -ga ${1} \
   | ruby -e 'print $1 if STDIN.gets =~ /^password: "(.*)"$/')
-  osascript -e "set the clipboard to \"${pw}\""
-  sleep 1
 
-  osascript -e "tell application \"System Events\" to keystroke \"v\" using command down"
-  osascript -e "tell application \"System Events\" to key code 36"
-  osascript -e "set the clipboard to \"\""
+  osascript << EOF
+tell application "F5Access"
+	activate
+end tell
+repeat until application "F5Access" is running
+	delay 0.1
+end repeat
+tell application "System Events"
+	repeat until (window 1 of process "F5Access" exists)
+		delay 0.1
+	end repeat
+  tell process "F5Access"
+		keystroke "a" using command down
+		keystroke "${pw}"
+	end tell
+end tell
+tell application "System Events"
+  key code 36
+end tell
+EOF
 }
 
 disconnect() {
