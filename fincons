@@ -17,6 +17,8 @@ set -eou pipefail
 IFS=$'\n\t'
 SELF_COMMAND="$0"
 
+F5ACCESS_CONTEXT="${XDG_CACHE_HOME:-$HOME/.fincloud}/f5access"
+
 connect() {
   sh -c "scutil --nc start \"${1}\""
 
@@ -59,13 +61,17 @@ selector() {
     state="$(get_connected)"
     if [[ ${state} == ${choice} ]]; then
       disconnect "${choice}"
+      save_context ""
     elif [[ ${state} == "none" ]]; then
       connect "${choice}"
+      save_context "${choice}"
     else
       disconnect "${state}"
+      save_context ""
       ncstate="$(scutil --nc list | grep f5.access | grep \"${choice}\")"      
       if [[ $ncstate == *"Disconnected"* ]]; then
         connect "${choice}"
+        save_context "${choice}"
       else
         err "connection error"
       fi
@@ -118,6 +124,21 @@ list() {
       echo "${n}"
     fi
   done
+}
+
+read_context() {
+  if [[ -f "${F5ACCESS_CONTEXT}" ]]; then
+    cat "${F5ACCESS_CONTEXT}"
+  fi
+}
+
+save_context() {
+  local saved
+  saved="$(read_context)"
+
+  if [[ "${saved}" != "${1}" ]]; then
+    printf %s "${1}" > "${F5ACCESS_CONTEXT}"
+  fi
 }
 
 err() {
