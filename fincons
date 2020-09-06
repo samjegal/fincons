@@ -80,13 +80,18 @@ selector() {
 }
 
 wait_state() {
+  spin='-\|/'
+  i=0
   while true ; do
     ncstate="$(scutil --nc list | grep f5.access | grep \"${1}\")"
     if [[ $ncstate == *"Disconnected"* ]]; then
       break
     fi
-    sleep 1
+    i=$(( (i+1) %4 ))
+    printf "\r${spin:$i:1}"
+    sleep .1
   done
+  printf "\r"
 }
 
 get_connected() {
